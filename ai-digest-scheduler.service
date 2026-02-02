@@ -1,0 +1,44 @@
+[Unit]
+Description=AI Digest Scheduler
+Documentation=https://github.com/yourusername/ai_digest
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ai_digest
+WorkingDirectory=/opt/ai_digest
+Environment="PATH=/opt/ai_digest/.venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=/opt/ai_digest/.env
+ExecStart=/opt/ai_digest/.venv/bin/python -m src.cli.main --schedule --deliver --log-level INFO --log-file /var/log/ai_digest/scheduler.log
+
+# Restart on failure
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=3
+
+# Resource limits
+MemoryLimit=512M
+CPUQuota=50%
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/ai_digest /var/log/ai_digest
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ai-digest
+
+[Install]
+WantedBy=multi-user.target

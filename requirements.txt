@@ -1,0 +1,15 @@
+flask>=2.2
+pydantic>=2.0
+scikit-learn>=1.2
+faiss-cpu; platform_system != 'Windows'
+pytest>=7.0
+requests>=2.28
+aiohttp>=3.9
+python-dotenv>=1.0
+tenacity>=8.2
+praw>=7.8.1
+alembic>=1.10
+prometheus-client>=0.16
+python-telegram-bot>=20.0
+aiosmtplib>=2.3
+apscheduler>=3.10

@@ -1,0 +1,344 @@
+﻿from flask import Flask, jsonify, request, Response
+import threading
+import asyncio
+import os
+import time
+from src.workflows.pipeline import Pipeline
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from .services import metrics as metrics_module
+from .services.storage import get_storage
+from .services.config import get_config_manager
+from .services.scheduler import (
+    start_scheduler,
+    stop_scheduler,
+    schedule_job,
+    list_jobs as scheduler_list_jobs,
+    remove_job as scheduler_remove_job,
+)
+from .logging_config import setup_logging, get_logger
+
+# Initialize logging
+setup_logging(log_level=os.getenv('LOG_LEVEL', 'INFO'))
+logger = get_logger(__name__)
+
+app = Flask(__name__)
+storage = get_storage()
+config_mgr = get_config_manager()
+
+logger.info("Flask server initialized", extra={"component": "server"})
+
+
+# ============================================================================
+# Health & Monitoring Endpoints
+# ============================================================================
+
+@app.route('/health')
+def health():
+    """Health check endpoint."""
+    logger.debug("Health check endpoint called", extra={"component": "server.health"})
+    return jsonify({'status': 'ok', 'timestamp': time.time()})
+
+
+@app.route('/metrics')
+def metrics():
+    """Prometheus metrics endpoint."""
+    logger.debug("Metrics endpoint called", extra={"component": "server.metrics"})
+    data = generate_latest()
+    return Response(data, mimetype=CONTENT_TYPE_LATEST)
+
+
+@app.route('/info')
+def info():
+    """System information endpoint."""
+    logger.debug("Info endpoint called", extra={"component": "server.info"})
+    return jsonify({
+        'name': 'AI Digest',
+        'version': '0.1.0',
+        'status': 'running',
+        'timestamp': time.time(),
+    })
+
+
+# ============================================================================
+# Digest Management Endpoints
+# ============================================================================
+
+@app.route('/api/digests', methods=['GET'])
+def list_digests():
+    """List recent digests with pagination."""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        days = request.args.get('days', None, type=int)
+
+        logger.debug(
+            "Listing digests",
+            extra={
+                "limit": limit,
+                "offset": offset,
+                "days": days,
+                "component": "server.digests",
+            },
+        )
+
+        digests = storage.list_digests(limit=limit, offset=offset, days=days)
+        
+        return jsonify({
+            'digests': [d.dict() for d in digests],
+            'count': len(digests),
+            'limit': limit,
+            'offset': offset,
+        }), 200
+
+    except Exception as e:
+        logger.error(
+            f"Failed to list digests: {str(e)}",
+            extra={"error": str(e), "component": "server.digests"},
+            exc_info=True,
+        )
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/digests/<digest_id>', methods=['GET'])
+def get_digest(digest_id):
+    """Retrieve a specific digest by ID."""
+    try:
+        logger.debug(
+            f"Retrieving digest: {digest_id}",
+            extra={"digest_id": digest_id, "component": "server.digests"},
+        )
+
+        digest = storage.get_digest(digest_id)
+        if digest is None:
+            return jsonify({'error': 'Digest not found'}), 404
+
+        return jsonify(digest.dict()), 200
+
+    except Exception as e:
+        logger.error(
+            f"Failed to retrieve digest: {str(e)}",
+            extra={"digest_id": digest_id, "error": str(e), "component": "server.digests"},
+            exc_info=True,
+        )
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/digests/<digest_id>', methods=['DELETE'])
+def delete_digest(digest_id):
+    """Delete a digest."""
+    try:
+        logger.info(
+            f"Deleting digest: {digest_id}",
+            extra={"digest_id": digest_id, "component": "server.digests"},
+        )
+
+        success = storage.delete_digest(digest_id)
+        if not success:
+            return jsonify({'error': 'Digest not found'}), 404
+
+        return jsonify({'deleted': True, 'digest_id': digest_id}), 200
+
+    except Exception as e:
+        logger.error(
+            f"Failed to delete digest: {str(e)}",
+            extra={"digest_id": digest_id, "error": str(e), "component": "server.digests"},
+            exc_info=True,
+        )
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# Pipeline Execution Endpoints
+# ============================================================================
+
+def run_pipeline_background(deliver: bool = False):
+    """Run pipeline in background thread."""
+    async def _run():
+        logger.info(
+            "Starting background pipeline run",
+            extra={"deliver": deliver, "component": "server.pipeline"},
+        )
+        try:
+            start_time = time.time()
+            p = Pipeline()
+            await p.run(deliver=deliver)
+            duration = time.time() - start_time
+            
+            # Save digest metadata
+            digest_id = time.strftime('%Y%m%d_%H%M%S')
+            storage.save_digest([], digest_id=digest_id, duration_seconds=duration)
+            
+            logger.info(
+                "Background pipeline run completed",
+                extra={
+                    "deliver": deliver,
+                    "duration": duration,
+                    "component": "server.pipeline",
+                },
+            )
+        except Exception as e:
+            logger.error(
+                f"Background pipeline run failed: {str(e)}",
+                extra={"deliver": deliver, "error": str(e), "component": "server.pipeline"},
+                exc_info=True,
+            )
+
+    try:
+        asyncio.run(_run())
+    except Exception as e:
+        logger.error(
+            f"Pipeline background execution error: {str(e)}",
+            extra={"error": str(e), "component": "server.pipeline"},
+            exc_info=True,
+        )
+
+
+@app.route('/api/pipeline/run', methods=['POST'])
+def trigger_pipeline():
+    """Trigger immediate pipeline run (background)."""
+    try:
+        data = request.get_json() or {}
+        deliver = data.get('deliver', False)
+
+        logger.info(
+            "Pipeline trigger endpoint called",
+            extra={"deliver": deliver, "component": "server.pipeline"},
+        )
+
+        thread = threading.Thread(
+            target=run_pipeline_background,
+            args=(deliver,),
+            daemon=True,
+        )
+        thread.start()
+
+        return jsonify({'started': True, 'deliver': deliver}), 202
+
+    except Exception as e:
+        logger.error(
+            f"Failed to trigger pipeline: {str(e)}",
+            extra={"error": str(e), "component": "server.pipeline"},
+            exc_info=True,
+        )
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# Scheduler Management Endpoints
+# ============================================================================
+
+@app.route('/api/scheduler/status', methods=['GET'])
+def scheduler_status():
+    """Get scheduler status."""
+    try:
+        logger.debug("Checking scheduler status", extra={"component": "server.scheduler"})
+
+        jobs = scheduler_list_jobs()
+        
+        return jsonify({
+            'running': len(jobs) > 0,
+            'jobs': jobs,
+            'job_count': len(jobs),
+        }), 200
+
+    except Exception as e:
+        logger.error(
+            f"Failed to get scheduler status: {str(e)}",
+            extra={"error": str(e), "component": "server.scheduler"},
+            exc_info=True,
+        )
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scheduler/start', methods=['POST'])
+def scheduler_start():
+    """Start the scheduler."""
+    try:
+        data = request.get_json() or {}
+        deliver = data.get('deliver', True)
+        hour = data.get('hour', 6)
+        minute = data.get('minute', 0)
+
+        logger.info(
+            f"Starting scheduler at {hour:02d}:{minute:02d} UTC",
+            extra={
+                "deliver": deliver,
+                "hour": hour,
+                "minute": minute,
+                "component": "server.scheduler",
+            },
+        )
+
+        scheduler = start_scheduler(deliver=deliver)
+        
+        # Override if custom time
+        if hour != 6 or minute != 0:
+            try:
+                scheduler.remove_job("daily_digest_6am")
+            except:
+                pass
+            schedule_job("daily", hour=hour, minute=minute, deliver=deliver)
+
+        jobs = scheduler_list_jobs()
+
+        return jsonify({
+            'started': True,
+            'deliver': deliver,
+            'jobs': jobs,
+        }), 200
+
+    except Exception as e:
+        logger.error(
+            f"Failed to start scheduler: {str(e)}",
+            extra={"error": str(e), "component": "server.scheduler"},
+            exc_info=True,
+        )
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scheduler/stop', methods=['POST'])
+def scheduler_stop():
+    """Stop the scheduler."""
+    try:
+        logger.info("Stopping scheduler", extra={"component": "server.scheduler"})
+
+        stop_scheduler()
+
+        return jsonify({'stopped': True}), 200
+
+    except Exception as e:
+        logger.error(
+            f"Failed to stop scheduler: {str(e)}",
+            extra={"error": str(e), "component": "server.scheduler"},
+            exc_info=True,
+        )
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# Error Handlers
+# ============================================================================
+
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors."""
+    return jsonify({'error': 'Not found'}), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors."""
+    logger.error(
+        f"Internal server error: {str(error)}",
+        extra={"error": str(error), "component": "server"},
+        exc_info=True,
+    )
+    return jsonify({'error': 'Internal server error'}), 500
+
+
+if __name__ == '__main__':
+    logger.info(
+        "Starting Flask server",
+        extra={"host": "0.0.0.0", "port": 5000, "component": "server"},
+    )
+    app.run(host='0.0.0.0', port=5000)

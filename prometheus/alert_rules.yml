@@ -1,0 +1,23 @@
+groups:
+  - name: ai_digest_alerts
+    rules:
+      - alert: HighDeliveryFailureRate
+        expr: |
+          sum(rate(ai_digest_delivery_failures_total[5m]))
+          / max(sum(rate(ai_digest_delivery_email_success_total[5m])) + sum(rate(ai_digest_delivery_telegram_success_total[5m])), 1)
+          > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High delivery failure rate for AI Digest"
+          description: "Delivery failures / successes > 10% over 5m"
+
+      - alert: EmbeddingLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(ai_digest_embeddings_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High embedding p95 latency"
+          description: "Embedding 95th percentile > 2s over 5m"
