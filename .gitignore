@@ -23,6 +23,14 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+package-lock.json
+
 # Virtual environments
 venv/
 env/

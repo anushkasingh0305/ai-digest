@@ -13,3 +13,5 @@ prometheus-client>=0.16
 python-telegram-bot>=20.0
 aiosmtplib>=2.3
 apscheduler>=3.10
+
+flask-cors>=4.0.0

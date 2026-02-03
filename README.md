@@ -1,120 +1,98 @@
-# AI Digest � Local-first Intelligence Digest
+# AI Digest
 
-## Quickstart
+AI-powered content digest system with React frontend and Flask backend.
 
-1. Create and activate a virtualenv:
+## Project Structure
 
-\\\powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-\\\
+```
+ai_digest/
+├── backend/          # Flask API server
+│   ├── src/          # Source code
+│   │   ├── server.py
+│   │   └── services/
+│   └── requirements.txt
+│
+└── frontend/         # React TypeScript app
+    ├── public/
+    ├── src/
+    │   ├── components/
+    │   ├── services/
+    │   └── utils/
+    └── package.json
+```
 
-2. Copy \.env.example\ to \.env\ and set any credentials.
+## Setup Instructions
 
-3. Run a simple pipeline run:
+### Backend Setup
 
-\\\powershell
-python -m src.cli.main --deliver
-\\\
+1. Navigate to backend directory:
+   ```bash
+   cd backend
+   ```
 
-For debugging with detailed logs:
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-\\\powershell
-python -m src.cli.main --deliver --log-level DEBUG
-\\\
+3. Run the server:
+   ```bash
+   python -m src.server
+   ```
+   
+   Server runs on http://localhost:5000
 
-See [LOGGING.md](LOGGING.md) for structured logging documentation.
+### Frontend Setup
 
-## Docker Compose (Optional)
+1. Navigate to frontend directory:
+   ```bash
+   cd frontend
+   ```
 
-\\\powershell
-docker-compose up --build
-\\\
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-Note: In this environment Docker was not available on PATH; if you see "docker: not found", install Docker Desktop or run the stack inside WSL/Linux.
+3. Start development server:
+   ```bash
+   npm start
+   ```
+   
+   App runs on http://localhost:3000
 
-### Health Checks and Verification
+## Default Credentials
 
-\\\powershell
-# Prometheus UI (if compose started):
-http://localhost:9090
+- **Username:** admin
+- **Password:** admin
 
-# Grafana UI:
-http://localhost:3000 (default admin/admin)
+## API Endpoints
 
-# App health (if your app exposes /health):
-http://localhost:5000/health
+- `GET /health` - Health check
+- `GET /info` - System information
+- `POST /api/auth/login` - User authentication
+- `GET /api/config` - Get configuration
+- `GET /api/digests` - List digests
+- `GET /api/webhooks` - List webhooks
+- `POST /api/pipeline/run` - Run pipeline
 
-# Metrics endpoint:
-http://localhost:5000/metrics
-\\\
+See `/api/*` for all available endpoints.
 
-## Logging
+## Technologies
 
-All operations are logged with structured JSON format. Configure logging via:
+### Backend
+- Flask (Python web framework)
+- PyJWT (JWT authentication)
+- Flask-CORS (Cross-origin support)
 
-- **CLI flag**: \--log-level DEBUG|INFO|WARNING|ERROR|CRITICAL\
-- **Environment**: \LOG_LEVEL=INFO\ in .env
-- **Output**: Console (stdout) and file (\logs/ai_digest.log\)
+### Frontend
+- React 18 with TypeScript
+- Axios (HTTP client)
+- CSS3 (Styling)
 
-Example with detailed logging:
+## Development
 
-\\\powershell
-python -m src.cli.main --deliver --log-level DEBUG --log-file logs/custom.log
-\\\
-
-See [LOGGING.md](LOGGING.md) for complete documentation on log levels, components, parsing, and best practices.
-
-## Benchmark
-
-Run performance benchmarks for embedding/deduplication:
-
-\\\powershell
-python benchmark.py --mode full --count 200
-\\\
-
-## Final Docker Checklist
-
-- Install Docker Desktop (Windows) and enable WSL2 integration, or install Docker Engine in Linux/WSL.
-- Ensure ports 5000, 9090, 3000, and 11434 are free or adjust \docker-compose.yml\.
-- Copy \.env.example\ to \.env\ and set any credentials (e.g., \DATABASE_URL\, \SMTP_*\, \TELEGRAM_*\).
-- Start the stack and run the smoke test script:
-
-**Windows PowerShell:**
-
-\\\powershell
-cd C:\Users\<you>\ai_digest
-.\run_docker_smoke.ps1
-\\\
-
-**WSL / Linux:**
-
-\\\ash
-cd ~/ai_digest
-chmod +x run_docker_smoke.sh
-./run_docker_smoke.sh
-\\\
-
-If anything fails, check container status and logs:
-
-\\\powershell
-docker ps -a
-docker compose logs --tail 200
-docker compose down -v
-\\\
-
-## Notes on Grafana Provisioning
-
-- Grafana will load dashboards and datasource from \./grafana/provisioning\ and dashboards from \./grafana/dashboards\.
-- If dashboards don't appear, open Grafana UI and check \Configuration  Data Sources\ and \Configuration  Dashboards\.
-
-## Documentation
-
-- [LOGGING.md](LOGGING.md) � Structured JSON logging guide
-- [DEPLOYMENT.md](DEPLOYMENT.md) � Setup and deployment guides
-- [CONTRIBUTING.md](CONTRIBUTING.md) � Contributing guidelines
-- [DELIVERABLES.md](DELIVERABLES.md) � Feature checklist and tech stack
-- [ROADMAP.md](ROADMAP.md) � Future roadmap
-
-This scaffold provides a runnable skeleton; customize adapters, LLM client, and delivery channels for your use case.
+Both frontend and backend run independently:
+- Backend: Flask development server (port 5000)
+- Frontend: React development server (port 3000)
+- CORS is configured to allow frontend-backend communication
